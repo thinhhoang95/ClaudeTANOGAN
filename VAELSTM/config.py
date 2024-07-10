@@ -5,5 +5,6 @@ train_configurations = {
     "learning_rate_vae": 1e-3,
     "batch_size": 32,
     "n_channel": 1,
-    "n_epochs_vae": 100
+    "n_epochs_vae": 100,
+    "tensorboard_log_dir": "tbo"
 }

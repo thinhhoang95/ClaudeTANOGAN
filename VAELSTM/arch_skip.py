@@ -2,6 +2,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import numpy as np
+from torch.utils.tensorboard import SummaryWriter
 
 class VAE(nn.Module):
     def __init__(self, config):
@@ -90,6 +91,9 @@ class VAE_LSTM_Model:
         self.vae_optimizer = torch.optim.Adam(self.vae.parameters(), lr=config['learning_rate_vae'])
         # self.lstm_optimizer = torch.optim.Adam(self.lstm.parameters(), lr=config['learning_rate_lstm'])
 
+        # Tboard
+        self.writer = SummaryWriter(log_dir=self.config['tensorboard_log_dir'])
+
     def vae_loss(self, recon_x, x, mu, log_var):
         BCE = F.mse_loss(recon_x, x, reduction='sum')
         KLD = -0.5 * torch.sum(1 + log_var - mu.pow(2) - log_var.exp())
@@ -98,7 +102,7 @@ class VAE_LSTM_Model:
     def train_vae(self, data):
         self.vae.train()
         for epoch in range(self.config['n_epochs_vae']):
-            for batch in data:
+            for batch_idx, batch in enumerate(data):
                 x = batch[0].to(self.device)
                 # print(f'Batch shape: {x.shape}')
                 self.vae_optimizer.zero_grad()
@@ -106,7 +110,19 @@ class VAE_LSTM_Model:
                 loss = self.vae_loss(recon_batch, x, mu, log_var)
                 loss.backward()
                 self.vae_optimizer.step()
-            print(f'VAE Epoch: {epoch}, Loss: {loss.item()};                                     ', end='\r')
+                # Log batch loss
+                self.writer.add_scalar('Loss/batch', loss.item(), epoch * len(data) + batch_idx)
+            print(f'VAE Epoch: {epoch}, Loss: {loss.item()}')
+            # Log epoch loss
+            #avg_epoch_loss = epoch_loss / len(data)
+            #self.writer.add_scalar('Loss/epoch', avg_epoch_loss, epoch)
+
+            # Log model parameters
+            for name, param in self.vae.named_parameters():
+                self.writer.add_histogram(f'Parameters/{name}', param, epoch)
+
+        self.writer.close()
+            
 
     def train_lstm(self, data):
         self.lstm.train()
