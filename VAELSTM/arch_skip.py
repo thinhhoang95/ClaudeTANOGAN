@@ -6,67 +6,61 @@ import numpy as np
 class VAE(nn.Module):
     def __init__(self, config):
         super(VAE, self).__init__()
-        # print(config)
         self.input_size = config['window_dim']
         self.hidden_dim = config['hidden_dim']
         self.latent_dim = config['latent_dim']
-        
+
         # Encoder
-        n_conv_layers = int(np.log2(self.hidden_dim) - 5) # because we start with 32 filters, example: 3
-        self.conv1 = nn.Conv1d(1, 32, kernel_size=4, stride=2, padding=1) # 1 channel, 32 filters, kernel size 3
+        n_conv_layers = int(np.log2(self.hidden_dim) - 5)  # because we start with 32 filters
+        self.conv1 = nn.Conv1d(1, 32, kernel_size=4, stride=2, padding=1)
         self.conv_layers = nn.ModuleList()
+        self.skip_connections = nn.ModuleList()
+
         for i in range(n_conv_layers):
-            self.conv_layers.append(nn.Conv1d(2 ** (i + 5), 2 ** (i + 6), kernel_size=3, stride=2, padding=1))
-        # ends with 2^9 filters
-        # TODO: The multiplication factor might need changing if different window length is used
+            in_channels = 2 ** (i + 5)
+            out_channels = 2 ** (i + 6)
+            self.conv_layers.append(nn.Conv1d(in_channels, out_channels, kernel_size=3, stride=2, padding=1))
+            self.skip_connections.append(nn.Conv1d(in_channels, out_channels, kernel_size=1, stride=2))
+
         self.fc_mu = nn.Linear(self.hidden_dim * 1, self.latent_dim)
         self.fc_logvar = nn.Linear(self.hidden_dim * 1, self.latent_dim)
-        
+
         # Decoder
         self.fc_decoder = nn.Linear(self.latent_dim, self.hidden_dim)
-        # start with 2^9 filters
         self.deconv1 = nn.ConvTranspose1d(2 ** (n_conv_layers + 5), 2 ** (n_conv_layers + 4), kernel_size=4, stride=2, padding=1)
         self.deconv_layers = nn.ModuleList()
+        self.skip_connections_decoder = nn.ModuleList()
+
         for i in range(n_conv_layers-1):
-            self.deconv_layers.append(nn.ConvTranspose1d(2 ** (n_conv_layers - i + 4), 2 ** (n_conv_layers - i + 3), kernel_size=4, stride=2, padding=1))
+            in_channels = 2 ** (n_conv_layers - i + 4)
+            out_channels = 2 ** (n_conv_layers - i + 3)
+            self.deconv_layers.append(nn.ConvTranspose1d(in_channels, out_channels, kernel_size=4, stride=2, padding=1))
+            self.skip_connections_decoder.append(nn.ConvTranspose1d(in_channels, out_channels, kernel_size=1, stride=2, output_padding=1))
+
         self.deconv3 = nn.ConvTranspose1d(32, 1, kernel_size=4, stride=2, padding=1)
 
-
     def encode(self, x):
-        # print('E1', x.shape)
-        x = F.relu(self.conv1(x))
-        # print('E2', x.shape)
-        for conv in self.conv_layers:
-            x = F.relu(conv(x))
-            # print('En', x.shape)
-        x = x.view(x.size(0), -1)
-        # print('E3', x.shape)
-        mu = self.fc_mu(x)
-        # print('E4 mu', mu.shape)
-        logvar = self.fc_logvar(x)
-        # print('E5 lvar', logvar.shape)
-        return mu, logvar
+        h = torch.relu(self.conv1(x))
+        for i, conv in enumerate(self.conv_layers):
+            h_conv = conv(h)
+            h_skip = self.skip_connections[i](h)
+            h = torch.relu(h_conv + h_skip)
+        h = h.view(-1, self.hidden_dim * 1)
+        return self.fc_mu(h), self.fc_logvar(h)
+
+    def decode(self, z):
+        h = torch.relu(self.fc_decoder(z)).view(-1, self.hidden_dim, 1)
+        h = torch.relu(self.deconv1(h))
+        for i, deconv in enumerate(self.deconv_layers):
+            h_deconv = deconv(h)
+            h_skip = self.skip_connections_decoder[i](h)
+            h = torch.relu(h_deconv + h_skip)
+        return self.deconv3(h)
 
     def reparameterize(self, mu, logvar):
         std = torch.exp(0.5 * logvar)
         eps = torch.randn_like(std)
         return mu + eps * std
-
-    def decode(self, z):
-        # print('D1', z.shape)
-        x = F.relu(self.fc_decoder(z))
-        # print('D2', x.shape)
-        x = x.view(x.size(0), -1, 1)
-        # print('D3', x.shape)
-        x = F.relu(self.deconv1(x))
-        # print('D4', x.shape)
-        for deconv in self.deconv_layers:
-            # print(deconv)
-            x = F.relu(deconv(x))
-            # print('Dn', x.shape)
-        x = self.deconv3(x)
-        # print('D5', x.shape)
-        return x
 
     def forward(self, x):
         mu, logvar = self.encode(x)
@@ -103,16 +97,16 @@ class VAE_LSTM_Model:
 
     def train_vae(self, data):
         self.vae.train()
-        for epoch in range(self.config['num_epochs_vae']):
+        for epoch in range(self.config['n_epochs_vae']):
             for batch in data:
-                x = batch.to(self.device)
-                print(f'Batch shape: {x.shape}')
+                x = batch[0].to(self.device)
+                # print(f'Batch shape: {x.shape}')
                 self.vae_optimizer.zero_grad()
                 recon_batch, mu, log_var = self.vae(x)
                 loss = self.vae_loss(recon_batch, x, mu, log_var)
                 loss.backward()
                 self.vae_optimizer.step()
-            print(f'VAE Epoch: {epoch}, Loss: {loss.item()}')
+            print(f'VAE Epoch: {epoch}, Loss: {loss.item()};                                     ', end='\r')
 
     def train_lstm(self, data):
         self.lstm.train()
