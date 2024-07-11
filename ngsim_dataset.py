@@ -39,11 +39,12 @@ class NGSIMDataset(Dataset):
         
         # important parameters
         #self.window_length = int(len(df_x)*0.1/self.ano_span_count)
-        self.window_length = 60
-        if data_settings.train:
-            self.stride = 10
-        else:
-            self.stride = self.window_length
+        self.window_length = 32
+        self.stride = 1
+        # if data_settings.train:
+        #     self.stride = 
+        # else:
+        #     self.stride = self.window_length
         
         self.n_feature = len(df_x.columns) - 1 # exclude Vehicle_ID
         # self.n_feature = 3
@@ -53,6 +54,7 @@ class NGSIMDataset(Dataset):
         
         # adapt the datasets for the sequence data shape
         x = self.unroll(x)
+        x = x.reshape((-1, 1, self.window_length))
         
         self.x = torch.from_numpy(x).float()
         
@@ -145,11 +147,12 @@ class NGSIMDataset(Dataset):
             df_x['Velocity'] = pd.DataFrame(df_v_scaled)
         return df_x
     
+    def get_train_data(self, config):
+        return torch.utils.data.DataLoader(self, batch_size=config['batch_size'], shuffle=True)
+    
     
 # settings for data loader
 class DataSettings:
-    
-    
     
     def __init__(self):
         # location of datasets and category
@@ -157,7 +160,7 @@ class DataSettings:
         data_file = end_name # dataset category and dataset name
         # key = 'realKnownCause/'+end_name # This key is used for reading anomaly labels
         
-        self.BASE = '/Users/thinhhoang/Documents/TAnoGAN/NGSIM_Dataset'
+        self.BASE = '/Users/thinhhoang/Documents/ClaudeTANOGAN/NGSIM_Dataset'
         # check if self.BASE has the last '/'
         if self.BASE[-1] != '/':
             self.BASE += '/'
@@ -169,8 +172,6 @@ class DataSettings:
         self.column_name = 'Local_Y'
     
     
-
-
 def main():
     data_settings = DataSettings()
     # define dataset object and data loader object for NAB dataset

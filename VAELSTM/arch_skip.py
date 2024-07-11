@@ -89,12 +89,15 @@ class VAE_LSTM_Model:
         self.vae = VAE(config).to(self.device)
         # self.lstm = LSTM(config).to(self.device)
         self.vae_optimizer = torch.optim.Adam(self.vae.parameters(), lr=config['learning_rate_vae'])
+        self.vae_scheduler = torch.optim.lr_scheduler.StepLR(self.vae_optimizer, step_size=5, gamma=0.1)
         # self.lstm_optimizer = torch.optim.Adam(self.lstm.parameters(), lr=config['learning_rate_lstm'])
 
         # Tboard
         self.writer = SummaryWriter(log_dir=self.config['tensorboard_log_dir'])
 
     def vae_loss(self, recon_x, x, mu, log_var):
+        print('Shape of x:', x.shape)
+        print('Shape of recon_x:', recon_x.shape)
         BCE = F.mse_loss(recon_x, x, reduction='sum')
         KLD = -0.5 * torch.sum(1 + log_var - mu.pow(2) - log_var.exp())
         return BCE + KLD
@@ -103,7 +106,7 @@ class VAE_LSTM_Model:
         self.vae.train()
         for epoch in range(self.config['n_epochs_vae']):
             for batch_idx, batch in enumerate(data):
-                x = batch[0].to(self.device)
+                x = batch.to(self.device)
                 # print(f'Batch shape: {x.shape}')
                 self.vae_optimizer.zero_grad()
                 recon_batch, mu, log_var = self.vae(x)
@@ -113,6 +116,7 @@ class VAE_LSTM_Model:
                 # Log batch loss
                 self.writer.add_scalar('Loss/batch', loss.item(), epoch * len(data) + batch_idx)
             print(f'VAE Epoch: {epoch}, Loss: {loss.item()}')
+            self.vae_scheduler.step()
             # Log epoch loss
             #avg_epoch_loss = epoch_loss / len(data)
             #self.writer.add_scalar('Loss/epoch', avg_epoch_loss, epoch)
