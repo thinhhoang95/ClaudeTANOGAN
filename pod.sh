@@ -1,5 +1,5 @@
 echo "Installing dependencies..."
-pip install tqdm scikit-learn pandas matplotlib numpy tensorboard
+pip install tqdm scikit-learn pandas matplotlib numpy tensorboard torchsummary
 
 echo "Setting up Git..."
 git config --global user.email "thinhhoangdinh95@hotmail.com"
