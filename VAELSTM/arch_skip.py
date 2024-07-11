@@ -126,7 +126,6 @@ class VAE_LSTM_Model:
                 self.writer.add_histogram(f'Parameters/{name}', param, epoch)
 
         self.writer.close()
-            
 
     def train_lstm(self, data):
         self.lstm.train()
