@@ -214,6 +214,27 @@ class VAE_LSTM_Model:
             reconstructed_sequence = self.vae.decode(predicted_sequence.squeeze(0))
         return reconstructed_sequence.cpu().numpy()
 
+    def predict_sequence_monte_carlo(self, initial_sequence, n_samples=100):
+        self.vae.eval()
+        self.lstm.eval()
+        # if initial_sequence is a numpy array, convert it to tensor and move to device
+        if type(initial_sequence) == np.ndarray:
+            initial_sequence = torch.tensor(initial_sequence, dtype=torch.float32)
+        with torch.no_grad():
+            emb_mu, emb_lvar = self.vae.encode(initial_sequence.to(self.device))
+            print('emb_mu:', emb_mu)
+            print('emb_lvar:', emb_lvar)
+            # Sample from the latent distribution
+            for i in range(n_samples):
+                z = self.vae.reparameterize(emb_mu, emb_lvar)
+                predicted_sequence = self.lstm(z.unsqueeze(0))
+                reconstructed_sequence = self.vae.decode(predicted_sequence.squeeze(0))
+                if i == 0:
+                    all_reconstructed_sequences = reconstructed_sequence.unsqueeze(0)
+                else:
+                    all_reconstructed_sequences = torch.cat((all_reconstructed_sequences, reconstructed_sequence.unsqueeze(0)), dim=0)
+        return all_reconstructed_sequences.cpu().numpy()
+
 # Example usage:
 # config = {...}  # Define your configuration
 # model = VAE_LSTM_Model(config)
