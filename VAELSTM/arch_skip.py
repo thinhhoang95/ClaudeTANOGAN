@@ -159,6 +159,13 @@ class VAE_LSTM_Model:
                 mu, _ = self.vae.encode(x)
                 embeddings.append(mu.cpu().numpy())
         return np.concatenate(embeddings, axis=0)
+    
+    def get_embedding(self, seq):
+        self.vae.eval()
+        with torch.no_grad():
+            x = torch.tensor(seq, dtype=torch.float32).to(self.device)
+            mu, _ = self.vae.encode(x)
+        return mu.cpu().numpy()
         
     # ===================================================
     # ================== LSTM functions ==================
@@ -191,9 +198,16 @@ class VAE_LSTM_Model:
     def save_lstm_weights(self, weights_path):
         torch.save(self.lstm.state_dict(), weights_path)
 
+    def load_lstm_weights(self, weights_path):
+        device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+        self.lstm.load_state_dict(torch.load(weights_path, map_location=device))
+
     def predict_sequence(self, initial_sequence):
         self.vae.eval()
         self.lstm.eval()
+        # if initial_sequence is a numpy array, convert it to tensor and move to device
+        if type(initial_sequence) == np.ndarray:
+            initial_sequence = torch.tensor(initial_sequence, dtype=torch.float32)
         with torch.no_grad():
             initial_embedding = self.vae.encode(initial_sequence.to(self.device))[0]
             predicted_sequence = self.lstm(initial_embedding.unsqueeze(0))

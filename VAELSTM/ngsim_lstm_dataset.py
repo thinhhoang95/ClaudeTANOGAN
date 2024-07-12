@@ -70,7 +70,7 @@ def create_lstm_data():
     print("Files: unrolled_data.npy, bond_data.pkl")
 
 if __name__ == '__main__':
-    # create_lstm_data()
+    # create_lstm_data() # comment this out if embeddings have already been generated
     pass
 
 from torch.utils.data import Dataset
