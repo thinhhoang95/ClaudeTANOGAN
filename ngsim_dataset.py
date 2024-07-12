@@ -82,7 +82,7 @@ class NGSIMDataset(Dataset):
     
     # For NGSIM dataset with no label file
     def unroll(self, data):
-        # data columns: ['Vehicle_ID', 'Local_Y', 'Local_X', 'Global_Time']
+        # data columns: Global_Time,Local_X,Local_Y,Velocity
         # data will be pandas dataframe, we must unroll by Vehicle_ID
         un_data = []
         seq_len = int(self.window_length)

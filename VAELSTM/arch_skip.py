@@ -4,6 +4,10 @@ import torch.nn.functional as F
 import numpy as np
 from torch.utils.tensorboard import SummaryWriter
 
+# ===================================================
+# ================== VAE Model ==================
+# ===================================================
+
 class VAE(nn.Module):
     def __init__(self, config):
         super(VAE, self).__init__()
@@ -68,33 +72,43 @@ class VAE(nn.Module):
         z = self.reparameterize(mu, logvar)
         return self.decode(z), mu, logvar
 
+# ===================================================
+# ================== LSTM Model ==================
+# ===================================================
 
 class LSTM(nn.Module):
     def __init__(self, config):
         super(LSTM, self).__init__()
-        self.lstm1 = nn.LSTM(config['code_size'], config['num_hidden_units_lstm'], batch_first=True)
+        self.lstm1 = nn.LSTM(config['latent_dim'], config['num_hidden_units_lstm'], batch_first=True)
         self.lstm2 = nn.LSTM(config['num_hidden_units_lstm'], config['num_hidden_units_lstm'], batch_first=True)
-        self.lstm3 = nn.LSTM(config['num_hidden_units_lstm'], config['code_size'], batch_first=True)
-
+        self.lstm3 = nn.LSTM(config['num_hidden_units_lstm'], config['latent_dim'], batch_first=True)
+        self.residual = nn.Linear(config['latent_dim'], config['latent_dim']) # add a residual connection
+        
     def forward(self, x):
+        r = self.residual(x)
         x, _ = self.lstm1(x)
         x, _ = self.lstm2(x)
         x, _ = self.lstm3(x)
-        return x
+        return x + r
 
 class VAE_LSTM_Model:
     def __init__(self, config):
         self.config = config
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         self.vae = VAE(config).to(self.device)
-        # self.lstm = LSTM(config).to(self.device)
+        self.lstm = LSTM(config).to(self.device)
         self.vae_optimizer = torch.optim.Adam(self.vae.parameters(), lr=config['learning_rate_vae'])
         self.vae_scheduler = torch.optim.lr_scheduler.StepLR(self.vae_optimizer, step_size=5, gamma=0.1)
-        # self.lstm_optimizer = torch.optim.Adam(self.lstm.parameters(), lr=config['learning_rate_lstm'])
-
+        self.lstm_optimizer = torch.optim.Adam(self.lstm.parameters(), lr=config['learning_rate_lstm'])
+        self.lstm_scheduler = torch.optim.lr_scheduler.StepLR(self.lstm_optimizer, step_size=5, gamma=0.1)
+        
         # Tboard
         self.writer = SummaryWriter(log_dir=self.config['tensorboard_log_dir'])
-
+        
+    # ===================================================
+    # ================== VAE functions ==================
+    # ===================================================
+    
     def vae_loss(self, recon_x, x, mu, log_var):
         print('Shape of x:', x.shape)
         print('Shape of recon_x:', recon_x.shape)
@@ -114,8 +128,8 @@ class VAE_LSTM_Model:
                 loss.backward()
                 self.vae_optimizer.step()
                 # Log batch loss
-                self.writer.add_scalar('Loss/batch', loss.item(), epoch * len(data) + batch_idx)
-            print(f'VAE Epoch: {epoch}, Loss: {loss.item()}')
+                self.writer.add_scalar('(VAE) Loss/batch', loss.item(), epoch * len(data) + batch_idx)
+            print(f'(VAE) Epoch: {epoch}, Loss: {loss.item()}')
             self.vae_scheduler.step()
             # Log epoch loss
             #avg_epoch_loss = epoch_loss / len(data)
@@ -123,15 +137,40 @@ class VAE_LSTM_Model:
 
             # Log model parameters
             for name, param in self.vae.named_parameters():
-                self.writer.add_histogram(f'Parameters/{name}', param, epoch)
+                self.writer.add_histogram(f'(VAE) Parameters/{name}', param, epoch)
 
         self.writer.close()
-
+        
+    def load_vae_weights(self, weights_path):
+        device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+        self.vae.load_state_dict(torch.load(weights_path, map_location=device))
+        self.vae = self.vae.to(device)
+        
+    def generate_embeddings(self, data):
+        self.vae.eval()
+        embeddings = []
+        with torch.no_grad():
+            for batch in data:
+                # if data is an NGSIM_LSTM_Dataset instance, then batch is a tuple
+                # the first element of the tuple is the input sequence
+                # the second element of the tuple is the bond which we don't care about when generating embeddings 
+                # Convert batch[0] to tensor and move to device
+                x = torch.tensor(batch[0], dtype=torch.float32).to(self.device)
+                mu, _ = self.vae.encode(x)
+                embeddings.append(mu.cpu().numpy())
+        return np.concatenate(embeddings, axis=0)
+        
+    # ===================================================
+    # ================== LSTM functions ==================
+    # ===================================================
+    
     def train_lstm(self, data):
         self.lstm.train()
         criterion = nn.MSELoss()
         for epoch in range(self.config['num_epochs_lstm']):
+            batch_idx = 0
             for batch in data:
+                # every iteration/batch
                 x, y = batch
                 x = x.to(self.device)
                 y = y.to(self.device)
@@ -140,17 +179,14 @@ class VAE_LSTM_Model:
                 loss = criterion(output, y)
                 loss.backward()
                 self.lstm_optimizer.step()
-            print(f'LSTM Epoch: {epoch}, Loss: {loss.item()}')
-
-    def generate_embeddings(self, data):
-        self.vae.eval()
-        embeddings = []
-        with torch.no_grad():
-            for batch in data:
-                x = batch.to(self.device)
-                mu, _ = self.vae.encode(x)
-                embeddings.append(mu.cpu().numpy())
-        return np.concatenate(embeddings, axis=0)
+                self.writer.add_scalar('(LSTM) Loss/batch', loss.item(), epoch * len(data) + batch_idx)
+                batch_idx += 1
+            # every epoch
+            print(f'(LSTM) Epoch: {epoch}, Loss: {loss.item()}')
+            self.lstm_scheduler.step()
+            # Log model parameters
+            for name, param in self.lstm.named_parameters():
+                self.writer.add_histogram(f'(LSTM) Parameters/{name}', param, epoch)
 
     def predict_sequence(self, initial_sequence):
         self.vae.eval()

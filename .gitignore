@@ -3,3 +3,4 @@ ngsim_dataset/trajectories-0750am-0805am.csv
 .pyc
 __pycache__/
 __pycache__/ngsim_dataset.cpython-310.pyc
+VAELSTM/tbo/*
