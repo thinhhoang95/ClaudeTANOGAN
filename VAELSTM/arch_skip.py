@@ -187,6 +187,9 @@ class VAE_LSTM_Model:
             # Log model parameters
             for name, param in self.lstm.named_parameters():
                 self.writer.add_histogram(f'(LSTM) Parameters/{name}', param, epoch)
+                
+    def save_lstm_weights(self, weights_path):
+        torch.save(self.lstm.state_dict(), weights_path)
 
     def predict_sequence(self, initial_sequence):
         self.vae.eval()
